@@ -13,8 +13,8 @@ class StatsTrackerGui:
 		self.rank_source_url = ""
 
 		self.root_window.title("Win/Loss Overlay Tracker")
-		self.root_window.geometry("860x690")
-		self.root_window.minsize(860, 690)
+		self.root_window.geometry("800x900")
+		self.root_window.minsize(800, 900)
 
 		self.active_game_variable = tkinter.StringVar(value=main.current_game)
 		self.stats_overlay_opacity_variable = tkinter.IntVar(value=int(main.settings.get("Stats Overlay Opacity", main.settings.get("Opacity", 100))))
@@ -27,7 +27,13 @@ class StatsTrackerGui:
 		self.session_draws_variable = tkinter.StringVar(value="0")
 
 		self.hotkey_variables = {}
+		self.hotkey_entries = {}
+		self.hotkey_record_buttons = {}
 		self.hotkey_status_variable = tkinter.StringVar(value="Hotkeys not registered yet.")
+		self.is_recording_hotkey = False
+		self.recording_hotkey_name = ""
+		self.recording_original_hotkey_text = ""
+		self.current_recording_modifiers = set()
 
 		self.create_layout()
 		self.refresh_all_display_values()
@@ -104,14 +110,22 @@ class StatsTrackerGui:
 
 		for row_index, hotkey_field_name in enumerate(hotkey_field_names):
 			ttk.Label(hotkey_frame, text=hotkey_field_name).grid(row=row_index, column=0, sticky="w", padx=(0, 8), pady=3)
-			hotkey_value = main.settings.get("Hotkeys", {}).get(hotkey_field_name, "")
+			hotkey_value = self.normalize_hotkey_text(main.settings.get("Hotkeys", {}).get(hotkey_field_name, ""))
 			hotkey_value_variable = tkinter.StringVar(value=hotkey_value)
 			self.hotkey_variables[hotkey_field_name] = hotkey_value_variable
 			hotkey_entry = ttk.Entry(hotkey_frame, textvariable=hotkey_value_variable, width=28)
 			hotkey_entry.grid(row=row_index, column=1, sticky="w", pady=3)
+			self.hotkey_entries[hotkey_field_name] = hotkey_entry
+			record_button = ttk.Button(
+				hotkey_frame,
+				text="Record",
+				command=lambda current_hotkey_field_name=hotkey_field_name: self.start_hotkey_recording(current_hotkey_field_name),
+			)
+			record_button.grid(row=row_index, column=2, sticky="w", padx=(8, 0), pady=3)
+			self.hotkey_record_buttons[hotkey_field_name] = record_button
 
 		save_hotkeys_button = ttk.Button(hotkey_frame, text="Save Hotkeys", command=self.save_hotkeys)
-		save_hotkeys_button.grid(row=len(hotkey_field_names), column=0, columnspan=2, sticky="w", pady=(10, 0))
+		save_hotkeys_button.grid(row=len(hotkey_field_names), column=0, columnspan=3, sticky="w", pady=(10, 0))
 
 		if self.overlay_port is not None:
 			overlay_info_frame = ttk.LabelFrame(parent_frame, text="OBS Browser Source URLs", padding=12)
@@ -237,7 +251,9 @@ class StatsTrackerGui:
 	def save_hotkeys(self):
 		main.settings.setdefault("Hotkeys", {})
 		for hotkey_field_name, hotkey_value_variable in self.hotkey_variables.items():
-			main.settings["Hotkeys"][hotkey_field_name] = hotkey_value_variable.get().strip()
+			normalized_hotkey_text = self.normalize_hotkey_text(hotkey_value_variable.get().strip())
+			hotkey_value_variable.set(normalized_hotkey_text)
+			main.settings["Hotkeys"][hotkey_field_name] = normalized_hotkey_text
 		main.save_settings(main.settings)
 		self.register_hotkeys_for_runtime(show_message=False)
 		messagebox.showinfo("Hotkeys Saved", "Hotkeys have been saved to settings.json")
@@ -247,6 +263,217 @@ class StatsTrackerGui:
 		self.hotkey_status_variable.set(hotkey_registration_result.get("message", "Hotkey status unknown."))
 		if show_message:
 			messagebox.showinfo("Hotkey Registration", hotkey_registration_result.get("message", "Hotkey registration complete."))
+
+	def normalize_modifier_key(self, key_symbol):
+		key_symbol_lower = str(key_symbol or "").lower()
+		modifier_aliases = {
+			"control_l": "ctrl",
+			"control_r": "ctrl",
+			"control": "ctrl",
+			"ctrl_l": "ctrl",
+			"ctrl_r": "ctrl",
+			"ctrl": "ctrl",
+			"alt_l": "alt",
+			"alt_r": "alt",
+			"alt": "alt",
+			"option_l": "alt",
+			"option_r": "alt",
+			"option": "alt",
+			"shift_l": "shift",
+			"shift_r": "shift",
+			"shift": "shift",
+		}
+		return modifier_aliases.get(key_symbol_lower)
+
+	def normalize_regular_key_token(self, key_token):
+		key_token_lower = str(key_token or "").strip().lower().replace(" ", "")
+		token_aliases = {
+			"return": "enter",
+			"esc": "esc",
+			"escape": "esc",
+			"prior": "pageup",
+			"next": "pagedown",
+			"pgup": "pageup",
+			"pgdn": "pagedown",
+			"back": "backspace",
+		}
+		return token_aliases.get(key_token_lower, key_token_lower)
+
+	def format_hotkey_part_for_display(self, key_part):
+		key_part_lower = str(key_part or "").lower()
+		display_aliases = {
+			"ctrl": "Ctrl",
+			"alt": "Alt",
+			"shift": "Shift",
+			"enter": "Enter",
+			"space": "Space",
+			"tab": "Tab",
+			"backspace": "Backspace",
+			"delete": "Delete",
+			"insert": "Insert",
+			"esc": "Esc",
+			"up": "Up",
+			"down": "Down",
+			"left": "Left",
+			"right": "Right",
+			"home": "Home",
+			"end": "End",
+			"pageup": "PageUp",
+			"pagedown": "PageDown",
+		}
+		if key_part_lower in display_aliases:
+			return display_aliases[key_part_lower]
+		if key_part_lower.startswith("f") and key_part_lower[1:].isdigit():
+			return key_part_lower.upper()
+		if len(key_part_lower) == 1:
+			return key_part_lower.upper()
+		return key_part_lower.title()
+
+	def normalize_regular_key(self, event):
+		key_symbol = str(getattr(event, "keysym", "") or "")
+		character = str(getattr(event, "char", "") or "")
+
+		if not key_symbol:
+			return ""
+
+		if self.normalize_modifier_key(key_symbol):
+			return ""
+
+		special_key_mappings = {
+			"Return": "enter",
+			"space": "space",
+			"Tab": "tab",
+			"BackSpace": "backspace",
+			"Delete": "delete",
+			"Insert": "insert",
+			"Escape": "esc",
+			"Up": "up",
+			"Down": "down",
+			"Left": "left",
+			"Right": "right",
+			"Home": "home",
+			"End": "end",
+			"Prior": "pageup",
+			"Next": "pagedown",
+		}
+		if key_symbol in special_key_mappings:
+			return self.normalize_regular_key_token(special_key_mappings[key_symbol])
+
+		if key_symbol.upper().startswith("F") and key_symbol[1:].isdigit():
+			return self.normalize_regular_key_token(key_symbol)
+
+		if len(character) == 1 and character.isprintable():
+			return self.normalize_regular_key_token(character)
+
+		return self.normalize_regular_key_token(key_symbol)
+
+	def build_normalized_hotkey(self, modifiers, regular_key):
+		ordered_modifier_names = ["ctrl", "alt", "shift"]
+		hotkey_parts = [modifier_name for modifier_name in ordered_modifier_names if modifier_name in modifiers]
+		if regular_key:
+			hotkey_parts.append(self.normalize_regular_key_token(regular_key))
+		display_hotkey_parts = [self.format_hotkey_part_for_display(hotkey_part) for hotkey_part in hotkey_parts]
+		return "+".join(display_hotkey_parts)
+
+	def normalize_hotkey_text(self, hotkey_text):
+		hotkey_text_value = str(hotkey_text or "").strip()
+		if not hotkey_text_value:
+			return ""
+
+		hotkey_text_parts = [part.strip() for part in hotkey_text_value.split("+") if part.strip()]
+		normalized_modifiers = set()
+		normalized_regular_key = ""
+
+		for hotkey_text_part in hotkey_text_parts:
+			normalized_modifier = self.normalize_modifier_key(hotkey_text_part)
+			if normalized_modifier:
+				normalized_modifiers.add(normalized_modifier)
+				continue
+
+			if not normalized_regular_key:
+				normalized_regular_key = self.normalize_regular_key_token(hotkey_text_part)
+
+		return self.build_normalized_hotkey(normalized_modifiers, normalized_regular_key)
+
+	def set_hotkey_record_buttons_enabled(self, enabled):
+		new_state = "normal" if enabled else "disabled"
+		for record_button in self.hotkey_record_buttons.values():
+			record_button.configure(state=new_state)
+
+	def update_recording_preview(self):
+		if not self.recording_hotkey_name or self.recording_hotkey_name not in self.hotkey_variables:
+			return
+		preview_hotkey_text = self.build_normalized_hotkey(self.current_recording_modifiers, "")
+		self.hotkey_variables[self.recording_hotkey_name].set(preview_hotkey_text)
+
+	def start_hotkey_recording(self, hotkey_field_name):
+		if self.is_recording_hotkey:
+			return
+
+		self.is_recording_hotkey = True
+		self.recording_hotkey_name = hotkey_field_name
+		self.recording_original_hotkey_text = self.hotkey_variables.get(hotkey_field_name, tkinter.StringVar(value="")).get()
+		self.current_recording_modifiers = set()
+		main.unregister_hotkeys()
+		self.hotkey_status_variable.set(f"Recording hotkey for '{hotkey_field_name}'... Press Esc to cancel.")
+		self.set_hotkey_record_buttons_enabled(False)
+		self.hotkey_record_buttons[hotkey_field_name].configure(text="Recording...")
+		self.hotkey_variables[hotkey_field_name].set("")
+		self.root_window.bind("<KeyPress>", self.on_recording_key_press)
+		self.root_window.bind("<KeyRelease>", self.on_recording_key_release)
+		self.root_window.focus_force()
+
+	def on_recording_key_press(self, event):
+		if not self.is_recording_hotkey:
+			return "break"
+
+		if str(event.keysym) == "Escape":
+			self.cancel_hotkey_recording()
+			return "break"
+
+		normalized_modifier = self.normalize_modifier_key(event.keysym)
+		if normalized_modifier:
+			self.current_recording_modifiers.add(normalized_modifier)
+			self.update_recording_preview()
+			return "break"
+
+		normalized_regular_key = self.normalize_regular_key(event)
+		if not normalized_regular_key:
+			return "break"
+
+		normalized_hotkey = self.build_normalized_hotkey(self.current_recording_modifiers, normalized_regular_key)
+		if normalized_hotkey and self.recording_hotkey_name in self.hotkey_variables:
+			self.hotkey_variables[self.recording_hotkey_name].set(normalized_hotkey)
+
+		self.finish_hotkey_recording()
+		return "break"
+
+	def on_recording_key_release(self, event):
+		if not self.is_recording_hotkey:
+			return "break"
+
+		normalized_modifier = self.normalize_modifier_key(event.keysym)
+		if normalized_modifier and normalized_modifier in self.current_recording_modifiers:
+			self.current_recording_modifiers.discard(normalized_modifier)
+			self.update_recording_preview()
+		return "break"
+
+	def finish_hotkey_recording(self):
+		self.is_recording_hotkey = False
+		if self.recording_hotkey_name in self.hotkey_record_buttons:
+			self.hotkey_record_buttons[self.recording_hotkey_name].configure(text="Record")
+		self.recording_hotkey_name = ""
+		self.recording_original_hotkey_text = ""
+		self.current_recording_modifiers = set()
+		self.root_window.unbind("<KeyPress>")
+		self.root_window.unbind("<KeyRelease>")
+		self.set_hotkey_record_buttons_enabled(True)
+		self.register_hotkeys_for_runtime(show_message=False)
+
+	def cancel_hotkey_recording(self):
+		if self.recording_hotkey_name in self.hotkey_variables:
+			self.hotkey_variables[self.recording_hotkey_name].set(self.recording_original_hotkey_text)
+		self.finish_hotkey_recording()
 
 	def on_hotkey_action_received(self, _hotkey_action_name):
 		self.root_window.after(0, self.refresh_all_display_values)
@@ -424,6 +651,8 @@ class StatsTrackerGui:
 		self.refresh_summary_labels()
 
 	def handle_window_close(self):
+		if self.is_recording_hotkey:
+			self.cancel_hotkey_recording()
 		main.unregister_hotkeys()
 		self.root_window.destroy()
 
