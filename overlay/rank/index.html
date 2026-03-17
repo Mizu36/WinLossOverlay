@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Win Loss Overlay - Rank</title>
+	<style>
+		@font-face {
+			font-family: "Futura Regular";
+			src: url("../fonts/Futura Regular.ttf") format("truetype");
+		}
+
+		@font-face {
+			font-family: "Valorant Font";
+			src: url("../fonts/Valorant Font.ttf") format("truetype");
+		}
+
+		:root {
+			color-scheme: dark;
+		}
+
+		* {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+		}
+
+		html,
+		body {
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: transparent;
+		}
+
+		body {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: #ffffff;
+			text-shadow: 0 0 8px rgba(0, 0, 0, 0.65);
+			opacity: 1;
+			transition: opacity 250ms ease;
+		}
+
+		.rank-wrapper {
+			position: relative;
+			width: 440px;
+			height: 110px;
+			overflow: hidden;
+		}
+
+		.flip-panel {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			transition: transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1);
+		}
+
+		.rank-label {
+			position: absolute;
+			top: 50%;
+			right: 126px;
+			transform: translateY(-50%);
+			font-size: 34px;
+			line-height: 1.12;
+			padding-bottom: 4px;
+			white-space: nowrap;
+			max-width: 260px;
+			text-align: right;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.rank-category {
+			display: none;
+		}
+
+		.rank-text {
+			position: absolute;
+			top: 50%;
+			right: 24px;
+			transform: translateY(-50%);
+			font-size: 34px;
+			line-height: 1.12;
+			padding-bottom: 4px;
+			white-space: nowrap;
+			text-align: right;
+		}
+
+		.rank-icon {
+			position: absolute;
+			top: 50%;
+			right: 24px;
+			transform: translateY(-50%);
+			width: 86px;
+			height: 86px;
+			object-fit: contain;
+			flex-shrink: 0;
+			display: none;
+		}
+	</style>
+</head>
+<body>
+	<div class="rank-wrapper">
+		<div class="flip-panel" id="rank-panel-primary">
+			<div class="rank-label" id="primary-rank-label">Rank:</div>
+			<div class="rank-category" id="primary-rank-category"></div>
+			<img id="primary-rank-icon" class="rank-icon" alt="Rank Icon">
+			<div class="rank-text" id="primary-rank-text"></div>
+		</div>
+		<div class="flip-panel" id="rank-panel-secondary">
+			<div class="rank-label" id="secondary-rank-label">Rank:</div>
+			<div class="rank-category" id="secondary-rank-category"></div>
+			<img id="secondary-rank-icon" class="rank-icon" alt="Rank Icon">
+			<div class="rank-text" id="secondary-rank-text"></div>
+		</div>
+	</div>
+	<script src="script.js"></script>
+</body>
+</html>
