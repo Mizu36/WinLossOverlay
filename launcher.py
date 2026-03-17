@@ -12,6 +12,9 @@ class OverlayHttpRequestHandler(SimpleHTTPRequestHandler):
 		application_root_directory = str(main.get_app_root())
 		super().__init__(*args, directory=application_root_directory, **kwargs)
 
+	def log_message(self, format, *args):
+		return
+
 	def end_headers(self):
 		requested_path = self.path.split("?", 1)[0].lower()
 		if requested_path.endswith("/data/overlay_state.json"):

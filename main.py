@@ -1,6 +1,7 @@
 import copy
 import json
 import base64
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +29,16 @@ image_data_uri_cache = {}
 
 
 def get_app_root():
+    if getattr(sys, "frozen", False):
+        executable_directory = Path(sys.executable).resolve().parent
+        extracted_bundle_directory = Path(getattr(sys, "_MEIPASS", executable_directory))
+
+        if (executable_directory / "overlay").exists():
+            return executable_directory
+        if (extracted_bundle_directory / "overlay").exists():
+            return extracted_bundle_directory
+
+        return executable_directory
     return Path(__file__).resolve().parent
 
 
